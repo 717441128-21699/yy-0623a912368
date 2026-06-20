@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, Textarea, Input, Button, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useApp } from '@/store/appContext';
@@ -8,9 +8,14 @@ import { parseParagraphs } from '@/utils/textParser';
 import styles from './index.module.scss';
 
 export default function SelectPage() {
-  const { chapters, addChapter, removeChapter, currentChapter, setCurrentChapter } = useApp();
+  const { chapters, addChapter, removeChapter, currentChapter, setCurrentChapter, stopPreview, stopPlayback } = useApp();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+
+  useEffect(() => {
+    stopPreview();
+    stopPlayback();
+  }, [stopPreview, stopPlayback]);
 
   const paragraphs = useMemo(() => parseParagraphs(content), [content]);
 

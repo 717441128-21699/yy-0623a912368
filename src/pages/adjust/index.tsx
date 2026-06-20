@@ -21,16 +21,15 @@ export default function AdjustPage() {
     updateVoiceSettings,
     currentChapter,
     previewVoice,
-    stopPreview
+    stopPreview,
+    isPreviewing
   } = useApp();
 
   const [highlightInput, setHighlightInput] = useState('');
-  const [isPreviewing, setIsPreviewing] = useState(false);
 
   useEffect(() => {
     return () => {
       stopPreview();
-      setIsPreviewing(false);
     };
   }, [stopPreview]);
 
@@ -44,18 +43,7 @@ export default function AdjustPage() {
   const restartPreviewWithSettings = (overrideSettings: Partial<VoiceSettings>) => {
     const text = getPreviewText();
     const merged = { ...voiceSettings, ...overrideSettings };
-
-    stopPreview();
-    setIsPreviewing(true);
     previewVoice(text, merged);
-
-    const charCount = text.replace(/\s/g, '').length;
-    const baseMs = charCount * 250;
-    const estimatedMs = Math.max(2000, Math.min(10000, baseMs / merged.speed));
-
-    setTimeout(() => {
-      setIsPreviewing(false);
-    }, estimatedMs);
   };
 
   const handleVoiceSelect = (voiceId: VoiceType) => {
@@ -134,19 +122,9 @@ export default function AdjustPage() {
   const handlePreviewToggle = () => {
     if (isPreviewing) {
       stopPreview();
-      setIsPreviewing(false);
     } else {
       const text = getPreviewText();
-      setIsPreviewing(true);
       previewVoice(text);
-
-      const charCount = text.replace(/\s/g, '').length;
-      const baseMs = charCount * 250;
-      const estimatedMs = Math.max(2000, Math.min(10000, baseMs / voiceSettings.speed));
-
-      setTimeout(() => {
-        setIsPreviewing(false);
-      }, estimatedMs);
     }
   };
 

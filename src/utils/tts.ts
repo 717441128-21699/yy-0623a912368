@@ -173,12 +173,12 @@ class WebSpeaker implements TTSSpeaker {
     window.speechSynthesis.speak(this.currentUtterance);
   }
 
-  private stopInternal() {
+  private stopInternal(triggerOnEnd: boolean = false) {
+    const cb = this.onEndCallback;
+    this.onEndCallback = null;
     this._speaking = false;
     this._paused = false;
     this.currentUtterance = null;
-    const cb = this.onEndCallback;
-    this.onEndCallback = null;
 
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       try {
@@ -190,7 +190,7 @@ class WebSpeaker implements TTSSpeaker {
       }
     }
 
-    if (cb) {
+    if (triggerOnEnd && cb) {
       try { cb(); } catch (e) {}
     }
   }

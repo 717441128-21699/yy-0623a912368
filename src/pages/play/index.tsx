@@ -29,8 +29,16 @@ export default function PlayPage() {
     nextParagraph,
     prevParagraph,
     setCurrentChapter,
-    setParagraphIndex
+    setParagraphIndex,
+    stopPreview
   } = useApp();
+
+  useEffect(() => {
+    stopPreview();
+    return () => {
+      stopPlayback();
+    };
+  }, [stopPreview, stopPlayback]);
 
   const [textSize, setTextSize] = useState<TextSize>('normal');
   const [sleepTimer, setSleepTimer] = useState<SleepTimer>(null);
