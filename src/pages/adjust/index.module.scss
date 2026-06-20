@@ -1,0 +1,231 @@
+@use '@/styles/variables.scss' as *;
+
+.pageContainer {
+  min-height: 100vh;
+  padding: $spacing-lg;
+  padding-bottom: 200rpx;
+}
+
+.section {
+  margin-bottom: $spacing-xxl;
+}
+
+.sectionTitle {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin-bottom: $spacing-md;
+}
+
+.sectionDesc {
+  font-size: $font-size-sm;
+  color: $color-text-tertiary;
+  margin-bottom: $spacing-lg;
+  line-height: $line-height-normal;
+}
+
+.voiceList {
+  // 音色选项列表
+}
+
+.speedSection {
+  background: $color-bg-card;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  box-shadow: $shadow-card;
+}
+
+.speedHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: $spacing-lg;
+}
+
+.speedLabel {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.speedValue {
+  font-size: $font-size-xl;
+  font-weight: $font-weight-bold;
+  color: $color-primary;
+}
+
+.speedSlider {
+  margin-bottom: $spacing-lg;
+}
+
+.speedButtons {
+  display: flex;
+  gap: $spacing-md;
+}
+
+.speedBtn {
+  @include button-reset;
+  flex: 1;
+  height: $button-height-md;
+  background: $color-bg-gray;
+  color: $color-text-primary;
+  border-radius: $radius-button;
+  font-size: $font-size-md;
+  font-weight: $font-weight-medium;
+
+  &:active {
+    background: $color-border;
+  }
+
+  &.primary {
+    background: $color-primary;
+    color: $color-text-white;
+
+    &:active {
+      background: $color-primary-dark;
+    }
+  }
+
+  &.slow {
+    background: $color-primary-bg;
+    color: $color-primary;
+    font-weight: $font-weight-semibold;
+
+    &:active {
+      background: rgba(255, 122, 69, 0.3);
+    }
+  }
+}
+
+.highlightSection {
+  background: $color-bg-card;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  box-shadow: $shadow-card;
+}
+
+.highlightHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: $spacing-md;
+}
+
+.highlightTitle {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.highlightDesc {
+  font-size: $font-size-sm;
+  color: $color-text-tertiary;
+  margin-bottom: $spacing-md;
+  line-height: $line-height-normal;
+}
+
+.highlightInputRow {
+  display: flex;
+  gap: $spacing-md;
+  margin-bottom: $spacing-md;
+}
+
+.highlightInput {
+  flex: 1;
+  height: 80rpx;
+  font-size: $font-size-md;
+  background: $color-bg-gray;
+  border-radius: $radius-md;
+  padding: 0 $spacing-md;
+  box-sizing: border-box;
+}
+
+.addBtn {
+  @include button-reset;
+  width: 120rpx;
+  height: 80rpx;
+  background: $color-primary;
+  color: $color-text-white;
+  border-radius: $radius-md;
+  font-size: $font-size-md;
+  font-weight: $font-weight-medium;
+
+  &:active {
+    background: $color-primary-dark;
+  }
+}
+
+.highlightTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-sm;
+}
+
+.highlightTag {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  padding: $spacing-sm $spacing-md;
+  background: $color-primary-bg;
+  color: $color-primary;
+  border-radius: $radius-button;
+  font-size: $font-size-sm;
+
+  .remove {
+    font-size: $font-size-md;
+    font-weight: $font-weight-bold;
+    margin-left: 4rpx;
+  }
+}
+
+.emptyTags {
+  font-size: $font-size-sm;
+  color: $color-text-tertiary;
+  padding: $spacing-md 0;
+}
+
+.bottomBar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: $spacing-lg;
+  padding-bottom: calc(#{$spacing-lg} + env(safe-area-inset-bottom));
+  background: $color-bg-card;
+  box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.06);
+  z-index: 100;
+}
+
+.previewTip {
+  font-size: $font-size-sm;
+  color: $color-text-tertiary;
+  text-align: center;
+  margin-top: $spacing-sm;
+}
+
+.pitchSection {
+  background: $color-bg-card;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  box-shadow: $shadow-card;
+  margin-top: $spacing-md;
+}
+
+.pitchHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: $spacing-md;
+}
+
+.pitchLabel {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.pitchValue {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-bold;
+  color: $color-secondary;
+}

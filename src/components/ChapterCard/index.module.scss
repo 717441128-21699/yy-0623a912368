@@ -1,0 +1,86 @@
+@use '@/styles/variables.scss' as *;
+
+.chapterCard {
+  background: $color-bg-card;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  margin-bottom: $spacing-md;
+  box-shadow: $shadow-card;
+  transition: all $transition-base;
+
+  &:active {
+    transform: scale(0.99);
+    box-shadow: $shadow-card-hover;
+  }
+
+  &.active {
+    border: 3rpx solid $color-primary;
+    background: $color-primary-bg;
+  }
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: $spacing-sm;
+}
+
+.chapterTitle {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  flex: 1;
+  margin-right: $spacing-md;
+  @include text-ellipsis;
+}
+
+.statusBadge {
+  font-size: $font-size-sm;
+  padding: 4rpx 16rpx;
+  border-radius: $radius-xs;
+  background: $color-primary-bg;
+  color: $color-primary;
+  white-space: nowrap;
+
+  &.read {
+    background: $color-bg-gray;
+    color: $color-text-tertiary;
+  }
+}
+
+.cardContent {
+  font-size: $font-size-md;
+  color: $color-text-secondary;
+  line-height: $line-height-loose;
+  @include text-ellipsis-multi(2);
+  margin-bottom: $spacing-md;
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: $font-size-sm;
+  color: $color-text-tertiary;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+}
+
+.metaItem {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.deleteBtn {
+  color: $color-error;
+  font-size: $font-size-sm;
+  padding: $spacing-xs $spacing-sm;
+  @include button-reset;
+  background: transparent;
+}

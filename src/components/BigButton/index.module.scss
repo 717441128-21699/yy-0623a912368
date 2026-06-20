@@ -1,0 +1,63 @@
+@use '@/styles/variables.scss' as *;
+
+.bigButton {
+  @include button-reset;
+  height: $button-height-lg;
+  padding: 0 $spacing-xl;
+  border-radius: $radius-button;
+  font-size: $font-size-lg;
+  font-weight: $font-weight-medium;
+  white-space: nowrap;
+  transition: all $transition-base;
+  min-width: 200rpx;
+
+  &:active {
+    opacity: 0.9;
+    transform: scale(0.98);
+  }
+
+  &.primary {
+    background: $color-primary;
+    color: $color-text-white;
+
+    &:active {
+      background: $color-primary-dark;
+    }
+  }
+
+  &.secondary {
+    background: $color-bg-card;
+    color: $color-text-primary;
+    border: 2rpx solid $color-border;
+
+    &:active {
+      background: $color-bg-hover;
+    }
+  }
+
+  &.success {
+    background: $color-success;
+    color: $color-text-white;
+  }
+
+  &.warning {
+    background: $color-warning;
+    color: $color-text-white;
+  }
+
+  &.large {
+    height: $button-height-xl;
+    font-size: $font-size-xl;
+    padding: 0 $spacing-xxl;
+  }
+
+  &.block {
+    width: 100%;
+    min-width: auto;
+  }
+
+  &.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+}

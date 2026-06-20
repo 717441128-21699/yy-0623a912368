@@ -1,0 +1,133 @@
+// 必须转发和使用 theme.scss
+@forward './theme.scss';
+@use './theme.scss' as *;
+
+// ============================================
+// 全局 SCSS 变量（建议直接复用，如有特殊设计需求可按需修改）
+// ============================================
+
+// 屏幕适配（设计稿基准 750rpx）
+$screen-width: 750rpx;
+$page-padding: 32rpx;
+$page-spacing: 32rpx;
+$max-content-width: 686rpx;
+
+// 间距（8px 网格系统 - 适老化：适当放大）
+$spacing-xs: 8rpx;
+$spacing-sm: 16rpx;
+$spacing-md: 24rpx;
+$spacing-lg: 32rpx;
+$spacing-xl: 48rpx;
+$spacing-xxl: 64rpx;
+
+// 圆角（适老化：大圆角更柔和）
+$radius-xs: 8rpx;
+$radius-sm: 12rpx;
+$radius-md: 16rpx;
+$radius-lg: 20rpx;
+$radius-xl: 24rpx;
+$radius-button: 56rpx;
+$radius-round: 999rpx;
+
+// 按钮高度（适老化：更大触控区域）
+$button-height-sm: 80rpx;
+$button-height-md: 96rpx;
+$button-height-lg: 112rpx;
+$button-height-xl: 128rpx;
+
+// 阴影
+$shadow-card: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+$shadow-card-hover: 0 4rpx 20rpx rgba(0, 0, 0, 0.12);
+$shadow-float: 0 4rpx 16rpx rgba(0, 0, 0, 0.1);
+$shadow-popup: 0 8rpx 32rpx rgba(0, 0, 0, 0.15);
+
+// 字体大小（适老化：整体偏大）
+$font-size-xs: 24rpx;
+$font-size-sm: 28rpx;
+$font-size-md: 32rpx;
+$font-size-lg: 36rpx;
+$font-size-xl: 40rpx;
+$font-size-xxl: 48rpx;
+$font-size-huge: 56rpx;
+
+// 行高
+$line-height-tight: 1.3;
+$line-height-normal: 1.5;
+$line-height-loose: 1.8;
+
+// 字重
+$font-weight-normal: 400;
+$font-weight-medium: 500;
+$font-weight-semibold: 600;
+$font-weight-bold: 700;
+
+// 过渡动画
+$transition-fast: 0.15s ease;
+$transition-base: 0.25s ease;
+$transition-slow: 0.35s ease;
+
+// ============================================
+// 常用 Mixin
+// ============================================
+// 单行文本省略
+@mixin text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// 多行文本省略
+@mixin text-ellipsis-multi($lines: 2) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: $lines;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// 清除浮动
+@mixin clearfix {
+  &::after {
+    content: '';
+    display: table;
+    clear: both;
+  }
+}
+
+// 水平垂直居中
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+// 横向滚动容器（微信小程序兼容）
+@mixin scroll-x-container {
+  white-space: nowrap;
+}
+
+// 横向滚动子项（微信小程序兼容，必须配合 scroll-x-container 使用）
+@mixin scroll-x-item($width) {
+  display: inline-block;
+  width: $width;
+  vertical-align: top;
+  white-space: normal; // 恢复子项内部换行
+}
+
+// Button 样式重置与保护
+// 使用方法：@include button-reset;
+@mixin button-reset {
+  padding: 0;
+  margin: 0;
+  line-height: normal;
+  text-align: inherit;
+  white-space: nowrap; // 强制不换行
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box; // 关键：确保 padding 和 border 不会撑大尺寸
+
+  &::after {
+    border: none;
+  }
+}
