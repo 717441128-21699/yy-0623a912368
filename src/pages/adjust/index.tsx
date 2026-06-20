@@ -1,11 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Input, Button, Slider, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useApp } from '@/store/appContext';
 import VoiceOption from '@/components/VoiceOption';
 import BigButton from '@/components/BigButton';
 import { voiceOptions } from '@/data/mockChapters';
-import type { VoiceType } from '@/types';
+import type { VoiceType, VoiceSettings } from '@/types';
 import styles from './index.module.scss';
 
 const PREVIEW_TEXTS: Record<VoiceType, string> = {
@@ -21,20 +21,16 @@ export default function AdjustPage() {
     updateVoiceSettings,
     currentChapter,
     previewVoice,
-    stopPreview,
-    adjustSpeed
+    stopPreview
   } = useApp();
 
   const [highlightInput, setHighlightInput] = useState('');
   const [isPreviewing, setIsPreviewing] = useState(false);
-  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       stopPreview();
-      if (previewTimerRef.current) {
-        clearTimeout(previewTimerRef.current);
-      }
+      setIsPreviewing(false);
     };
   }, [stopPreview]);
 
@@ -45,52 +41,37 @@ export default function AdjustPage() {
     return PREVIEW_TEXTS[voiceSettings.voiceType] || PREVIEW_TEXTS.slow;
   };
 
-  const startPreview = useCallback(() => {
+  const restartPreviewWithSettings = (overrideSettings: Partial<VoiceSettings>) => {
     const text = getPreviewText();
+    const merged = { ...voiceSettings, ...overrideSettings };
 
     stopPreview();
     setIsPreviewing(true);
-    previewVoice(text);
+    previewVoice(text, merged);
 
     const charCount = text.replace(/\s/g, '').length;
     const baseMs = charCount * 250;
-    const estimatedMs = Math.max(2000, Math.min(10000, baseMs / voiceSettings.speed));
+    const estimatedMs = Math.max(2000, Math.min(10000, baseMs / merged.speed));
 
-    if (previewTimerRef.current) {
-      clearTimeout(previewTimerRef.current);
-    }
-    previewTimerRef.current = setTimeout(() => {
+    setTimeout(() => {
       setIsPreviewing(false);
     }, estimatedMs);
-
-    console.log('[AdjustPage] Preview started with', voiceSettings.voiceType,
-      'speed:', voiceSettings.speed,
-      'pitch:', voiceSettings.pitch,
-      'highlights:', voiceSettings.highlightWords.length);
-  }, [voiceSettings, currentChapter, previewVoice, stopPreview]);
-
-  const stopPreviewLocal = useCallback(() => {
-    stopPreview();
-    setIsPreviewing(false);
-    if (previewTimerRef.current) {
-      clearTimeout(previewTimerRef.current);
-      previewTimerRef.current = null;
-    }
-  }, [stopPreview]);
+  };
 
   const handleVoiceSelect = (voiceId: VoiceType) => {
     const option = voiceOptions.find(v => v.id === voiceId);
-    if (option) {
-      updateVoiceSettings({
-        voiceType: voiceId,
-        speed: option.speed,
-        pitch: option.pitch
-      });
-      console.log('[AdjustPage] Voice selected:', voiceId);
+    if (!option) return;
 
-      if (isPreviewing) {
-        setTimeout(() => startPreview(), 50);
-      }
+    const newSettings = {
+      voiceType: voiceId,
+      speed: option.speed,
+      pitch: option.pitch
+    };
+
+    updateVoiceSettings(newSettings);
+
+    if (isPreviewing) {
+      restartPreviewWithSettings(newSettings);
     }
   };
 
@@ -99,17 +80,17 @@ export default function AdjustPage() {
     updateVoiceSettings({ speed: value });
 
     if (isPreviewing) {
-      setTimeout(() => startPreview(), 50);
+      restartPreviewWithSettings({ speed: value });
     }
   };
 
   const handleSpeedAdjust = (delta: number) => {
     const newSpeed = Math.max(0.5, Math.min(1.5, voiceSettings.speed + delta));
-    updateVoiceSettings({ speed: Number(newSpeed.toFixed(1)) });
-    console.log('[AdjustPage] Speed adjusted to:', newSpeed.toFixed(1));
+    const fixedSpeed = Number(newSpeed.toFixed(1));
+    updateVoiceSettings({ speed: fixedSpeed });
 
     if (isPreviewing) {
-      setTimeout(() => startPreview(), 50);
+      restartPreviewWithSettings({ speed: fixedSpeed });
     }
   };
 
@@ -118,52 +99,54 @@ export default function AdjustPage() {
     updateVoiceSettings({ pitch: value });
 
     if (isPreviewing) {
-      setTimeout(() => startPreview(), 50);
+      restartPreviewWithSettings({ pitch: value });
     }
   };
 
   const handleAddHighlight = () => {
     if (!highlightInput.trim()) {
-      Taro.showToast({
-        title: '请输入关键词',
-        icon: 'none'
-      });
+      Taro.showToast({ title: '请输入关键词', icon: 'none' });
       return;
     }
-
     if (voiceSettings.highlightWords.includes(highlightInput.trim())) {
-      Taro.showToast({
-        title: '已添加过',
-        icon: 'none'
-      });
+      Taro.showToast({ title: '已添加过', icon: 'none' });
       return;
     }
 
     const newWords = [...voiceSettings.highlightWords, highlightInput.trim()];
     updateVoiceSettings({ highlightWords: newWords });
     setHighlightInput('');
-    console.log('[AdjustPage] Highlight word added:', highlightInput.trim());
 
     if (isPreviewing) {
-      setTimeout(() => startPreview(), 50);
+      restartPreviewWithSettings({ highlightWords: newWords });
     }
   };
 
   const handleRemoveHighlight = (word: string) => {
     const newWords = voiceSettings.highlightWords.filter(w => w !== word);
     updateVoiceSettings({ highlightWords: newWords });
-    console.log('[AdjustPage] Highlight word removed:', word);
 
     if (isPreviewing) {
-      setTimeout(() => startPreview(), 50);
+      restartPreviewWithSettings({ highlightWords: newWords });
     }
   };
 
   const handlePreviewToggle = () => {
     if (isPreviewing) {
-      stopPreviewLocal();
+      stopPreview();
+      setIsPreviewing(false);
     } else {
-      startPreview();
+      const text = getPreviewText();
+      setIsPreviewing(true);
+      previewVoice(text);
+
+      const charCount = text.replace(/\s/g, '').length;
+      const baseMs = charCount * 250;
+      const estimatedMs = Math.max(2000, Math.min(10000, baseMs / voiceSettings.speed));
+
+      setTimeout(() => {
+        setIsPreviewing(false);
+      }, estimatedMs);
     }
   };
 
@@ -215,22 +198,13 @@ export default function AdjustPage() {
             />
 
             <View className={styles.speedButtons}>
-              <Button
-                className={styles.speedBtn}
-                onClick={() => handleSpeedAdjust(-0.1)}
-              >
+              <Button className={styles.speedBtn} onClick={() => handleSpeedAdjust(-0.1)}>
                 - 慢一点
               </Button>
-              <Button
-                className={`${styles.speedBtn} ${styles.slow}`}
-                onClick={() => handleSpeedAdjust(-0.2)}
-              >
+              <Button className={`${styles.speedBtn} ${styles.slow}`} onClick={() => handleSpeedAdjust(-0.2)}>
                 🐢 再慢一点
               </Button>
-              <Button
-                className={styles.speedBtn}
-                onClick={() => handleSpeedAdjust(0.1)}
-              >
+              <Button className={styles.speedBtn} onClick={() => handleSpeedAdjust(0.1)}>
                 + 快一点
               </Button>
             </View>

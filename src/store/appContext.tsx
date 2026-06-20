@@ -33,7 +33,7 @@ interface AppContextType {
   nextParagraph: () => void;
   prevParagraph: () => void;
   adjustSpeed: (delta: number) => void;
-  previewVoice: (text: string) => void;
+  previewVoice: (text: string, overrideSettings?: Partial<VoiceSettings>) => void;
   stopPreview: () => void;
 }
 
@@ -56,13 +56,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const isPreviewRef = useRef(false);
   const isAutoPlayRef = useRef(false);
 
+  const stopSpeaker = useCallback(() => {
+    isPreviewRef.current = false;
+    isAutoPlayRef.current = false;
+    stopSpeak();
+  }, []);
+
   useEffect(() => {
     const storedChapters = getChapters();
     if (storedChapters.length === 0) {
       const mockChapters = getMockChapters();
-      setChapters(mockChapters);
-      if (mockChapters.length > 0) {
-        setCurrentChapterId(mockChapters[0].id);
+      const sorted = [...mockChapters].sort((a, b) => a.createdAt - b.createdAt);
+      setChapters(sorted);
+      if (sorted.length > 0) {
+        setCurrentChapterId(sorted[0].id);
       }
     } else {
       const sortedChapters = [...storedChapters].sort((a, b) => a.createdAt - b.createdAt);
@@ -83,15 +90,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       stopSpeaker();
     };
-  }, []);
+  }, [stopSpeaker]);
 
   const currentChapter = chapters.find(c => c.id === currentChapterId) || null;
-
-  const stopSpeaker = useCallback(() => {
-    isPreviewRef.current = false;
-    isAutoPlayRef.current = false;
-    stopSpeak();
-  }, []);
 
   const playParagraph = useCallback((paragraphIndex: number, isAutoPlay = false) => {
     if (!currentChapter) return;
@@ -264,19 +265,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const previewVoice = useCallback((text: string) => {
+  const previewVoice = useCallback((text: string, overrideSettings?: Partial<VoiceSettings>) => {
     stopSpeak();
     isPreviewRef.current = true;
     isAutoPlayRef.current = false;
     setIsPlaying(false);
     setIsPaused(false);
 
-    console.log('[AppContext] Preview voice:', voiceSettings.voiceType, 'speed:', voiceSettings.speed);
+    const effectiveSettings = overrideSettings
+      ? { ...voiceSettings, ...overrideSettings }
+      : voiceSettings;
+
+    console.log('[AppContext] Preview voice:', effectiveSettings.voiceType,
+      'speed:', effectiveSettings.speed,
+      'pitch:', effectiveSettings.pitch,
+      'highlights:', effectiveSettings.highlightWords);
 
     speak({
       text,
-      settings: voiceSettings,
-      highlightWords: voiceSettings.highlightWords,
+      settings: effectiveSettings,
+      highlightWords: effectiveSettings.highlightWords,
       onEnd: () => {
         console.log('[AppContext] Preview finished');
         isPreviewRef.current = false;

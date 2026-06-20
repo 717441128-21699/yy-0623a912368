@@ -174,17 +174,25 @@ class WebSpeaker implements TTSSpeaker {
   }
 
   private stopInternal() {
+    this._speaking = false;
+    this._paused = false;
+    this.currentUtterance = null;
+    const cb = this.onEndCallback;
+    this.onEndCallback = null;
+
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       try {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.pause();
         window.speechSynthesis.cancel();
       } catch (e) {
         console.warn('[TTS] cancel error:', e);
       }
     }
-    this._speaking = false;
-    this._paused = false;
-    this.currentUtterance = null;
-    this.onEndCallback = null;
+
+    if (cb) {
+      try { cb(); } catch (e) {}
+    }
   }
 
   pause() {
@@ -385,13 +393,13 @@ export function processHighlightText(text: string, highlightWords: string[]): st
 export function getVoiceBaseParams(voiceType: VoiceType): { rate: number; pitch: number; volume: number } {
   switch (voiceType) {
     case 'slow':
-      return { rate: 0.7, pitch: 1.0, volume: 1.0 };
+      return { rate: 0.6, pitch: 1.0, volume: 1.0 };
     case 'female':
-      return { rate: 0.95, pitch: 1.25, volume: 1.0 };
+      return { rate: 0.9, pitch: 1.4, volume: 1.0 };
     case 'male':
-      return { rate: 0.85, pitch: 0.75, volume: 1.0 };
+      return { rate: 0.8, pitch: 0.6, volume: 1.0 };
     case 'dialect':
-      return { rate: 0.75, pitch: 1.1, volume: 1.0 };
+      return { rate: 0.7, pitch: 1.2, volume: 1.0 };
     default:
       return { rate: 0.8, pitch: 1.0, volume: 1.0 };
   }

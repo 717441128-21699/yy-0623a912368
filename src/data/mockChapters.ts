@@ -64,28 +64,28 @@ export const voiceOptions = [
     id: 'slow' as const,
     name: '慢速旁白',
     description: '语速缓慢，咬字清晰，最适合老人收听',
-    speed: 0.7,
-    pitch: 1
+    speed: 0.6,
+    pitch: 1.0
   },
   {
     id: 'female' as const,
     name: '清亮女声',
     description: '声音温柔明亮，情感丰富',
     speed: 0.9,
-    pitch: 1.1
+    pitch: 1.4
   },
   {
     id: 'male' as const,
     name: '沉稳男声',
     description: '低沉浑厚，有磁性',
-    speed: 0.85,
-    pitch: 0.9
+    speed: 0.8,
+    pitch: 0.6
   },
   {
     id: 'dialect' as const,
     name: '方言韵味',
     description: '带点北方口音，亲切接地气',
-    speed: 0.75,
-    pitch: 1
+    speed: 0.7,
+    pitch: 1.2
   }
 ];
