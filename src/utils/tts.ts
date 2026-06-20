@@ -11,7 +11,7 @@ export interface SpeakOptions {
 }
 
 interface TTSSpeaker {
-  speak: (text: string, rate: number, pitch: number, volume: number) => void;
+  speak: (text: string, rate: number, pitch: number, volume: number, voiceType: VoiceType) => void;
   pause: () => void;
   resume: () => void;
   stop: () => void;
@@ -19,20 +19,25 @@ interface TTSSpeaker {
   isPaused: () => boolean;
   setOnEnd: (cb: () => void) => void;
   setOnBoundary: (cb: (charIndex: number, charLength: number) => void) => void;
+  destroy: () => void;
 }
 
 class WebSpeaker implements TTSSpeaker {
-  private utterance: SpeechSynthesisUtterance | null = null;
   private onEndCallback: (() => void) | null = null;
   private onBoundaryCallback: ((charIndex: number, charLength: number) => void) | null = null;
   private voices: SpeechSynthesisVoice[] = [];
-  private paused = false;
+  private _paused = false;
+  private _speaking = false;
+  private currentUtterance: SpeechSynthesisUtterance | null = null;
 
   constructor() {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       const loadVoices = () => {
         this.voices = window.speechSynthesis.getVoices();
-        console.log('[TTS] Loaded voices:', this.voices.length);
+        console.log('[TTS] Web voices loaded:', this.voices.length);
+        this.voices.forEach((v, i) => {
+          console.log(`[TTS]   [${i}] ${v.name} (${v.lang}) default=${v.default}`);
+        });
       };
       loadVoices();
       if (window.speechSynthesis.onvoiceschanged !== undefined) {
@@ -44,10 +49,15 @@ class WebSpeaker implements TTSSpeaker {
   private pickVoice(voiceType: VoiceType): SpeechSynthesisVoice | null {
     if (this.voices.length === 0) return null;
 
-    const zhVoices = this.voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('zh'));
+    const zhVoices = this.voices.filter(v =>
+      v.lang && (v.lang.toLowerCase().startsWith('zh') || v.lang.toLowerCase().startsWith('cmn'))
+    );
+
     if (zhVoices.length === 0) {
       return this.voices[0] || null;
     }
+
+    console.log('[TTS] Available zh voices:', zhVoices.map(v => v.name).join(', '));
 
     switch (voiceType) {
       case 'female': {
@@ -56,7 +66,10 @@ class WebSpeaker implements TTSSpeaker {
           v.name.toLowerCase().includes('woman') ||
           v.name.toLowerCase().includes('女') ||
           v.name.toLowerCase().includes('xiaoxiao') ||
-          v.name.toLowerCase().includes('xiaoyi')
+          v.name.toLowerCase().includes('xiaoyi') ||
+          v.name.toLowerCase().includes('tingting') ||
+          v.name.toLowerCase().includes('sinji') ||
+          v.name.toLowerCase().includes('mei-jia')
         );
         return female || zhVoices[0];
       }
@@ -66,7 +79,9 @@ class WebSpeaker implements TTSSpeaker {
           v.name.toLowerCase().includes('man') ||
           v.name.toLowerCase().includes('男') ||
           v.name.toLowerCase().includes('yunjian') ||
-          v.name.toLowerCase().includes('yunyang')
+          v.name.toLowerCase().includes('yunyang') ||
+          v.name.toLowerCase().includes('daniel') ||
+          v.name.toLowerCase().includes('alex')
         );
         return male || zhVoices[zhVoices.length - 1];
       }
@@ -76,7 +91,9 @@ class WebSpeaker implements TTSSpeaker {
           v.name.toLowerCase().includes('yue') ||
           v.name.toLowerCase().includes('粤') ||
           v.name.toLowerCase().includes('sichuan') ||
-          v.name.toLowerCase().includes('东北')
+          v.name.toLowerCase().includes('东北') ||
+          v.name.toLowerCase().includes('shanghai') ||
+          v.name.toLowerCase().includes('hk')
         );
         return dialect || zhVoices[0];
       }
@@ -89,81 +106,124 @@ class WebSpeaker implements TTSSpeaker {
   speak(text: string, rate: number, pitch: number, volume: number, voiceType: VoiceType = 'slow') {
     if (typeof window === 'undefined' || !window.speechSynthesis) {
       console.warn('[TTS] Web Speech API not available');
-      setTimeout(() => this.onEndCallback?.(), 1000);
+      setTimeout(() => {
+        this._speaking = false;
+        this._paused = false;
+        this.onEndCallback?.();
+      }, 1500);
       return;
     }
 
-    window.speechSynthesis.cancel();
-    this.paused = false;
+    this.stopInternal();
 
-    this.utterance = new SpeechSynthesisUtterance(text);
-    this.utterance.lang = 'zh-CN';
-    this.utterance.rate = rate;
-    this.utterance.pitch = pitch;
-    this.utterance.volume = volume;
+    this.currentUtterance = new SpeechSynthesisUtterance(text);
+    this.currentUtterance.lang = 'zh-CN';
+    this.currentUtterance.rate = Math.max(0.1, Math.min(10, rate));
+    this.currentUtterance.pitch = Math.max(0, Math.min(2, pitch));
+    this.currentUtterance.volume = Math.max(0, Math.min(1, volume));
 
     const voice = this.pickVoice(voiceType);
     if (voice) {
-      this.utterance.voice = voice;
-      console.log('[TTS] Using voice:', voice.name, voice.lang);
+      this.currentUtterance.voice = voice;
+      console.log('[TTS] Using voice:', voice.name, '/ type:', voiceType);
+    } else {
+      console.log('[TTS] No zh voice found, using default');
     }
 
-    this.utterance.onstart = () => {
-      console.log('[TTS] Speaking started, text length:', text.length);
-      this.paused = false;
+    console.log('[TTS] Speak start:', {
+      length: text.length,
+      rate: this.currentUtterance.rate,
+      pitch: this.currentUtterance.pitch
+    });
+
+    this.currentUtterance.onstart = () => {
+      this._speaking = true;
+      this._paused = false;
+      console.log('[TTS] onstart fired');
     };
 
-    this.utterance.onend = () => {
-      console.log('[TTS] Speaking ended');
-      this.paused = false;
-      this.onEndCallback?.();
+    this.currentUtterance.onend = () => {
+      console.log('[TTS] onend fired');
+      this._speaking = false;
+      this._paused = false;
+      this.currentUtterance = null;
+      const cb = this.onEndCallback;
+      this.onEndCallback = null;
+      cb?.();
     };
 
-    this.utterance.onerror = (e) => {
-      console.error('[TTS] Speaking error:', e);
-      this.paused = false;
-      this.onEndCallback?.();
+    this.currentUtterance.onerror = (e) => {
+      console.error('[TTS] onerror:', e.error, e.message);
+      this._speaking = false;
+      this._paused = false;
+      this.currentUtterance = null;
+      const cb = this.onEndCallback;
+      this.onEndCallback = null;
+      cb?.();
     };
 
-    this.utterance.onboundary = (e) => {
+    this.currentUtterance.onboundary = (e) => {
       if (this.onBoundaryCallback) {
         this.onBoundaryCallback(e.charIndex, e.charLength || 1);
       }
     };
 
-    window.speechSynthesis.speak(this.utterance);
+    this._speaking = true;
+    this._paused = false;
+    window.speechSynthesis.speak(this.currentUtterance);
+  }
+
+  private stopInternal() {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch (e) {
+        console.warn('[TTS] cancel error:', e);
+      }
+    }
+    this._speaking = false;
+    this._paused = false;
+    this.currentUtterance = null;
+    this.onEndCallback = null;
   }
 
   pause() {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.pause();
-      this.paused = true;
+    if (typeof window !== 'undefined' && window.speechSynthesis && this._speaking) {
+      try {
+        window.speechSynthesis.pause();
+        this._paused = true;
+        console.log('[TTS] paused');
+      } catch (e) {
+        console.warn('[TTS] pause error:', e);
+      }
     }
   }
 
   resume() {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.resume();
-      this.paused = false;
+    if (typeof window !== 'undefined' && window.speechSynthesis && this._paused) {
+      try {
+        window.speechSynthesis.resume();
+        this._paused = false;
+        console.log('[TTS] resumed');
+      } catch (e) {
+        console.warn('[TTS] resume error:', e);
+      }
     }
   }
 
   stop() {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      this.paused = false;
-    }
+    this.stopInternal();
   }
 
   isSpeaking(): boolean {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
-      return window.speechSynthesis.speaking;
+      return window.speechSynthesis.speaking || this._speaking;
     }
-    return false;
+    return this._speaking;
   }
 
   isPaused(): boolean {
-    return this.paused;
+    return this._paused;
   }
 
   setOnEnd(cb: () => void) {
@@ -172,77 +232,84 @@ class WebSpeaker implements TTSSpeaker {
 
   setOnBoundary(cb: (charIndex: number, charLength: number) => void) {
     this.onBoundaryCallback = cb;
+  }
+
+  destroy() {
+    this.stopInternal();
   }
 }
 
-class WechatSpeaker implements TTSSpeaker {
+class FallbackSpeaker implements TTSSpeaker {
   private onEndCallback: (() => void) | null = null;
   private onBoundaryCallback: ((charIndex: number, charLength: number) => void) | null = null;
-  private speaking = false;
-  private paused = false;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private _speaking = false;
+  private _paused = false;
+  private totalDuration = 0;
+  private elapsedDuration = 0;
 
-  speak(text: string, rate: number, pitch: number, volume: number, voiceType: VoiceType = 'slow') {
-    try {
-      const plugin = Taro.requirePlugin('WechatSI');
-      const manager = plugin.getRecordRecognitionManager();
+  speak(text: string, rate: number) {
+    this.stop();
 
-      if (!plugin.textToSpeech) {
-        console.warn('[TTS] WechatSI TTS not available, falling back');
-        setTimeout(() => this.onEndCallback?.(), 2000);
-        return;
+    this._speaking = true;
+    this._paused = false;
+
+    const charCount = text.replace(/\s/g, '').length;
+    const baseDuration = charCount * 200;
+    this.totalDuration = Math.max(1000, Math.floor(baseDuration / rate));
+    this.elapsedDuration = 0;
+
+    console.log('[TTS] Fallback speak:', {
+      chars: charCount,
+      duration: this.totalDuration + 'ms',
+      rate
+    });
+
+    const startTime = Date.now();
+    const tick = () => {
+      if (!this._speaking || this._paused) return;
+
+      const elapsed = Date.now() - startTime;
+      this.elapsedDuration = elapsed;
+
+      if (elapsed >= this.totalDuration) {
+        this._speaking = false;
+        const cb = this.onEndCallback;
+        this.onEndCallback = null;
+        console.log('[TTS] Fallback finished');
+        cb?.();
+      } else {
+        this.timer = setTimeout(tick, 100);
       }
+    };
 
-      this.speaking = true;
-      this.paused = false;
-
-      plugin.textToSpeech({
-        lang: 'zh_CN',
-        tts: true,
-        content: text,
-        speed: rate * 1.5,
-        voice: voiceType === 'female' ? 0 : voiceType === 'male' ? 1 : 0,
-        success: (res: any) => {
-          console.log('[TTS] Wechat TTS success');
-        },
-        fail: (err: any) => {
-          console.error('[TTS] Wechat TTS fail:', err);
-          this.speaking = false;
-          this.onEndCallback?.();
-        },
-        complete: () => {
-          this.speaking = false;
-          this.onEndCallback?.();
-        }
-      });
-    } catch (e) {
-      console.warn('[TTS] Wechat plugin not available, falling back');
-      this.speaking = true;
-      setTimeout(() => {
-        this.speaking = false;
-        this.onEndCallback?.();
-      }, 3000);
-    }
+    this.timer = setTimeout(tick, 100);
   }
 
   pause() {
-    this.paused = true;
+    this._paused = true;
   }
 
   resume() {
-    this.paused = false;
+    this._paused = false;
   }
 
   stop() {
-    this.speaking = false;
-    this.paused = false;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this._speaking = false;
+    this._paused = false;
+    this.onEndCallback = null;
   }
 
   isSpeaking(): boolean {
-    return this.speaking;
+    return this._speaking && !this._paused;
   }
 
   isPaused(): boolean {
-    return this.paused;
+    return this._paused;
   }
 
   setOnEnd(cb: () => void) {
@@ -251,21 +318,40 @@ class WechatSpeaker implements TTSSpeaker {
 
   setOnBoundary(cb: (charIndex: number, charLength: number) => void) {
     this.onBoundaryCallback = cb;
+  }
+
+  destroy() {
+    this.stop();
   }
 }
 
 let speaker: TTSSpeaker | null = null;
+let speakerType: 'web' | 'fallback' = 'fallback';
 
-function getSpeaker(): TTSSpeaker {
-  if (!speaker) {
-    if (process.env.TARO_ENV === 'weapp') {
-      speaker = new WechatSpeaker();
-    } else {
+function initSpeaker(): TTSSpeaker {
+  if (speaker) return speaker;
+
+  try {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
       speaker = new WebSpeaker();
+      speakerType = 'web';
+      console.log('[TTS] Using Web Speech API');
+    } else {
+      speaker = new FallbackSpeaker();
+      speakerType = 'fallback';
+      console.log('[TTS] Using fallback speaker');
     }
-    console.log('[TTS] Speaker created:', process.env.TARO_ENV);
+  } catch (e) {
+    console.warn('[TTS] Init failed, using fallback:', e);
+    speaker = new FallbackSpeaker();
+    speakerType = 'fallback';
   }
+
   return speaker;
+}
+
+export function getSpeakerType(): string {
+  return speakerType;
 }
 
 export function processHighlightText(text: string, highlightWords: string[]): string {
@@ -274,27 +360,36 @@ export function processHighlightText(text: string, highlightWords: string[]): st
   }
 
   let result = text;
-  const sortedWords = [...highlightWords].sort((a, b) => b.length - a.length);
+  const sortedWords = [...highlightWords]
+    .filter(w => w && w.trim())
+    .sort((a, b) => b.length - a.length);
+
+  if (sortedWords.length === 0) {
+    return text;
+  }
 
   sortedWords.forEach(word => {
     const trimmed = word.trim();
-    if (!trimmed) return;
-
-    const regex = new RegExp(`(${trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'g');
-    result = result.replace(regex, '，$1。$1，');
+    try {
+      const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'g');
+      result = result.replace(regex, `，${trimmed}。${trimmed}，`);
+    } catch (e) {
+      console.warn('[TTS] Regex error for word:', trimmed, e);
+    }
   });
 
   return result;
 }
 
-export function getVoiceParams(voiceType: VoiceType): { rate: number; pitch: number; volume: number } {
+export function getVoiceBaseParams(voiceType: VoiceType): { rate: number; pitch: number; volume: number } {
   switch (voiceType) {
     case 'slow':
       return { rate: 0.7, pitch: 1.0, volume: 1.0 };
     case 'female':
-      return { rate: 0.95, pitch: 1.2, volume: 1.0 };
+      return { rate: 0.95, pitch: 1.25, volume: 1.0 };
     case 'male':
-      return { rate: 0.85, pitch: 0.8, volume: 1.0 };
+      return { rate: 0.85, pitch: 0.75, volume: 1.0 };
     case 'dialect':
       return { rate: 0.75, pitch: 1.1, volume: 1.0 };
     default:
@@ -306,51 +401,73 @@ export function speak(options: SpeakOptions) {
   const { text, settings, highlightWords = [], onEnd, onStart, onBoundary } = options;
 
   if (!text || !text.trim()) {
+    console.warn('[TTS] Empty text, skip');
     onEnd?.();
     return;
   }
 
-  const speaker = getSpeaker();
-  const baseParams = getVoiceParams(settings.voiceType);
+  const sp = initSpeaker();
+  const baseParams = getVoiceBaseParams(settings.voiceType);
 
-  const finalRate = Math.max(0.3, Math.min(2.0, baseParams.rate * (settings.speed / 0.8)));
-  const finalPitch = baseParams.pitch * settings.pitch;
+  const speedMultiplier = settings.speed / 0.8;
+  const finalRate = Math.max(0.3, Math.min(2.0, baseParams.rate * speedMultiplier));
+  const finalPitch = Math.max(0, Math.min(2, baseParams.pitch * settings.pitch));
   const finalVolume = settings.volume;
 
   const processedText = processHighlightText(text, highlightWords);
 
-  console.log('[TTS] Speak:', {
+  console.log('[TTS] Speak request:', {
     voiceType: settings.voiceType,
-    originalTextLen: text.length,
-    processedTextLen: processedText.length,
+    originalLen: text.length,
+    processedLen: processedText.length,
     rate: finalRate,
     pitch: finalPitch,
-    highlightCount: highlightWords.length
+    highlightCount: highlightWords.length,
+    speaker: speakerType
   });
 
-  speaker.setOnEnd(() => onEnd?.());
-  speaker.setOnBoundary((idx, len) => onBoundary?.(idx, len));
+  sp.setOnEnd(() => {
+    console.log('[TTS] Speak completed');
+    onEnd?.();
+  });
+
+  if (onBoundary) {
+    sp.setOnBoundary(onBoundary);
+  }
 
   onStart?.();
-  speaker.speak(processedText, finalRate, finalPitch, finalVolume, settings.voiceType);
+  sp.speak(processedText, finalRate, finalPitch, finalVolume, settings.voiceType);
 }
 
 export function pauseSpeak() {
-  getSpeaker().pause();
+  if (speaker) {
+    speaker.pause();
+  }
 }
 
 export function resumeSpeak() {
-  getSpeaker().resume();
+  if (speaker) {
+    speaker.resume();
+  }
 }
 
 export function stopSpeak() {
-  getSpeaker().stop();
+  if (speaker) {
+    speaker.stop();
+  }
 }
 
 export function isSpeaking(): boolean {
-  return getSpeaker().isSpeaking();
+  return speaker ? speaker.isSpeaking() : false;
 }
 
 export function isPaused(): boolean {
-  return getSpeaker().isPaused();
+  return speaker ? speaker.isPaused() : false;
+}
+
+export function destroySpeaker() {
+  if (speaker) {
+    speaker.destroy();
+    speaker = null;
+  }
 }

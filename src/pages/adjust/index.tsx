@@ -5,11 +5,10 @@ import { useApp } from '@/store/appContext';
 import VoiceOption from '@/components/VoiceOption';
 import BigButton from '@/components/BigButton';
 import { voiceOptions } from '@/data/mockChapters';
-import { stopSpeak } from '@/utils/tts';
 import type { VoiceType } from '@/types';
 import styles from './index.module.scss';
 
-const PREVIEW_TEXT: Record<VoiceType, string> = {
+const PREVIEW_TEXTS: Record<VoiceType, string> = {
   slow: '各位听众朋友，大家好。今天我来给大家读一段小说，请慢慢听，不要着急。',
   female: '春风十里不如你，亲爱的，今天天气真好，我们一起去郊外走走吧。',
   male: '话说那天下第一剑客，行走江湖数十年，从未遇到过真正的对手。',
@@ -22,7 +21,8 @@ export default function AdjustPage() {
     updateVoiceSettings,
     currentChapter,
     previewVoice,
-    stopPreview
+    stopPreview,
+    adjustSpeed
   } = useApp();
 
   const [highlightInput, setHighlightInput] = useState('');
@@ -31,12 +31,52 @@ export default function AdjustPage() {
 
   useEffect(() => {
     return () => {
-      stopSpeak();
+      stopPreview();
       if (previewTimerRef.current) {
         clearTimeout(previewTimerRef.current);
       }
     };
-  }, []);
+  }, [stopPreview]);
+
+  const getPreviewText = (): string => {
+    if (currentChapter && currentChapter.paragraphs.length > 0) {
+      return currentChapter.paragraphs[0].substring(0, 100);
+    }
+    return PREVIEW_TEXTS[voiceSettings.voiceType] || PREVIEW_TEXTS.slow;
+  };
+
+  const startPreview = useCallback(() => {
+    const text = getPreviewText();
+
+    stopPreview();
+    setIsPreviewing(true);
+    previewVoice(text);
+
+    const charCount = text.replace(/\s/g, '').length;
+    const baseMs = charCount * 250;
+    const estimatedMs = Math.max(2000, Math.min(10000, baseMs / voiceSettings.speed));
+
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current);
+    }
+    previewTimerRef.current = setTimeout(() => {
+      setIsPreviewing(false);
+    }, estimatedMs);
+
+    console.log('[AdjustPage] Preview started with', voiceSettings.voiceType,
+      'speed:', voiceSettings.speed,
+      'pitch:', voiceSettings.pitch,
+      'highlights:', voiceSettings.highlightWords.length);
+  }, [voiceSettings, currentChapter, previewVoice, stopPreview]);
+
+  const stopPreviewLocal = useCallback(() => {
+    stopPreview();
+    setIsPreviewing(false);
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+  }, [stopPreview]);
 
   const handleVoiceSelect = (voiceId: VoiceType) => {
     const option = voiceOptions.find(v => v.id === voiceId);
@@ -49,8 +89,7 @@ export default function AdjustPage() {
       console.log('[AdjustPage] Voice selected:', voiceId);
 
       if (isPreviewing) {
-        setIsPreviewing(false);
-        stopPreview();
+        setTimeout(() => startPreview(), 50);
       }
     }
   };
@@ -58,6 +97,10 @@ export default function AdjustPage() {
   const handleSpeedChange = (e: any) => {
     const value = Number(e.detail.value.toFixed(1));
     updateVoiceSettings({ speed: value });
+
+    if (isPreviewing) {
+      setTimeout(() => startPreview(), 50);
+    }
   };
 
   const handleSpeedAdjust = (delta: number) => {
@@ -66,14 +109,17 @@ export default function AdjustPage() {
     console.log('[AdjustPage] Speed adjusted to:', newSpeed.toFixed(1));
 
     if (isPreviewing) {
-      handleStopPreview();
-      setTimeout(() => handlePreview(), 200);
+      setTimeout(() => startPreview(), 50);
     }
   };
 
   const handlePitchChange = (e: any) => {
     const value = Number(e.detail.value.toFixed(1));
     updateVoiceSettings({ pitch: value });
+
+    if (isPreviewing) {
+      setTimeout(() => startPreview(), 50);
+    }
   };
 
   const handleAddHighlight = () => {
@@ -93,51 +139,39 @@ export default function AdjustPage() {
       return;
     }
 
-    updateVoiceSettings({
-      highlightWords: [...voiceSettings.highlightWords, highlightInput.trim()]
-    });
+    const newWords = [...voiceSettings.highlightWords, highlightInput.trim()];
+    updateVoiceSettings({ highlightWords: newWords });
     setHighlightInput('');
     console.log('[AdjustPage] Highlight word added:', highlightInput.trim());
+
+    if (isPreviewing) {
+      setTimeout(() => startPreview(), 50);
+    }
   };
 
   const handleRemoveHighlight = (word: string) => {
-    updateVoiceSettings({
-      highlightWords: voiceSettings.highlightWords.filter(w => w !== word)
-    });
+    const newWords = voiceSettings.highlightWords.filter(w => w !== word);
+    updateVoiceSettings({ highlightWords: newWords });
     console.log('[AdjustPage] Highlight word removed:', word);
-  };
 
-  const handlePreview = () => {
     if (isPreviewing) {
-      handleStopPreview();
-      return;
+      setTimeout(() => startPreview(), 50);
     }
-
-    const previewText = PREVIEW_TEXT[voiceSettings.voiceType] || PREVIEW_TEXT.slow;
-    let textToSpeak = previewText;
-
-    if (currentChapter && currentChapter.paragraphs.length > 0) {
-      textToSpeak = currentChapter.paragraphs[0].substring(0, 80) + '...';
-    }
-
-    setIsPreviewing(true);
-    previewVoice(textToSpeak);
-
-    const estimatedMs = Math.min(8000, textToSpeak.length * 250 / voiceSettings.speed);
-    previewTimerRef.current = setTimeout(() => {
-      setIsPreviewing(false);
-    }, estimatedMs);
-
-    console.log('[AdjustPage] Preview started with voice:', voiceSettings.voiceType);
   };
 
-  const handleStopPreview = () => {
-    stopPreview();
-    setIsPreviewing(false);
-    if (previewTimerRef.current) {
-      clearTimeout(previewTimerRef.current);
+  const handlePreviewToggle = () => {
+    if (isPreviewing) {
+      stopPreviewLocal();
+    } else {
+      startPreview();
     }
-    console.log('[AdjustPage] Preview stopped');
+  };
+
+  const voiceNameMap: Record<VoiceType, string> = {
+    slow: '慢速旁白',
+    female: '清亮女声',
+    male: '沉稳男声',
+    dialect: '方言韵味'
   };
 
   return (
@@ -264,12 +298,12 @@ export default function AdjustPage() {
       </ScrollView>
 
       <View className={styles.bottomBar}>
-        <BigButton type="primary" size="large" block onClick={handlePreview}>
+        <BigButton type="primary" size="large" block onClick={handlePreviewToggle}>
           {isPreviewing ? '⏹️ 停止试听' : '🔊 试听效果'}
         </BigButton>
         <Text className={styles.previewTip}>
           {currentChapter
-            ? `试听：${voiceSettings.voiceType === 'slow' ? '慢速旁白' : voiceSettings.voiceType === 'female' ? '清亮女声' : voiceSettings.voiceType === 'male' ? '沉稳男声' : '方言韵味'} · ${voiceSettings.speed.toFixed(1)}x`
+            ? `试听：${voiceNameMap[voiceSettings.voiceType]} · ${voiceSettings.speed.toFixed(1)}x · ${voiceSettings.highlightWords.length}个重点词`
             : '请到"选文"页选择或添加章节'}
         </Text>
       </View>
