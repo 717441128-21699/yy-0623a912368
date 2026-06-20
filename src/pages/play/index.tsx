@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, Button, Slider, ScrollView } from '@tarojs/components';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { View, Text, Button, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import classnames from 'classnames';
 import { useApp } from '@/store/appContext';
-import { formatTime, estimateDuration } from '@/utils/textParser';
+import { formatTime } from '@/utils/textParser';
 import type { Chapter } from '@/types';
 import styles from './index.module.scss';
 
@@ -22,13 +22,14 @@ export default function PlayPage() {
     chapters,
     currentChapter,
     isPlaying,
+    isPaused,
     currentParagraphIndex,
-    setPlaying,
-    setParagraphIndex,
+    togglePlay,
+    stopPlayback,
     nextParagraph,
     prevParagraph,
     setCurrentChapter,
-    voiceSettings
+    setParagraphIndex
   } = useApp();
 
   const [textSize, setTextSize] = useState<TextSize>('normal');
@@ -36,59 +37,41 @@ export default function PlayPage() {
   const [sleepRemaining, setSleepRemaining] = useState<number | null>(null);
   const [showSleepModal, setShowSleepModal] = useState(false);
   const [showChapterModal, setShowChapterModal] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const totalParagraphs = currentChapter?.paragraphs.length || 0;
   const currentParagraph = currentChapter?.paragraphs[currentParagraphIndex] || '';
 
-  const totalDuration = currentChapter
-    ? estimateDuration(currentChapter.content, voiceSettings.speed)
-    : 0;
-
-  const startPlayback = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-
-    timerRef.current = setInterval(() => {
-      setProgress((prev) => {
-        const newProgress = prev + 1;
-        if (newProgress >= totalDuration) {
-          setPlaying(false);
-          return totalDuration;
-        }
-
-        const paraDuration = totalDuration / totalParagraphs;
-        const currentParaIndex = Math.min(
-          Math.floor(newProgress / paraDuration),
-          totalParagraphs - 1
-        );
-        setParagraphIndex(currentParaIndex);
-
-        return newProgress;
-      });
-    }, 1000);
-  }, [totalDuration, totalParagraphs, setPlaying, setParagraphIndex]);
-
-  const stopPlayback = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
+  const totalDuration = useMemo(() => {
+    if (!currentChapter) return 0;
+    const totalChars = currentChapter.paragraphs.reduce((sum, p) => sum + p.length, 0);
+    return Math.max(60, Math.ceil(totalChars / 4));
+  }, [currentChapter]);
 
   useEffect(() => {
-    if (isPlaying) {
-      startPlayback();
+    if (isPlaying && !isPaused) {
+      elapsedTimerRef.current = setInterval(() => {
+        setElapsedSeconds(prev => Math.min(prev + 1, totalDuration));
+      }, 1000);
     } else {
-      stopPlayback();
+      if (elapsedTimerRef.current) {
+        clearInterval(elapsedTimerRef.current);
+      }
     }
 
-    return () => stopPlayback();
-  }, [isPlaying, startPlayback, stopPlayback]);
+    return () => {
+      if (elapsedTimerRef.current) {
+        clearInterval(elapsedTimerRef.current);
+      }
+    };
+  }, [isPlaying, isPaused, totalDuration]);
+
+  useEffect(() => {
+    setElapsedSeconds(0);
+  }, [currentChapter?.id]);
 
   useEffect(() => {
     if (sleepTimer && sleepTimer > 0) {
@@ -99,15 +82,15 @@ export default function PlayPage() {
       }
 
       sleepTimerRef.current = setInterval(() => {
-        setSleepRemaining((prev) => {
+        setSleepRemaining(prev => {
           if (prev === null || prev <= 1) {
-            setPlaying(false);
+            stopPlayback();
             setSleepTimer(null);
             if (sleepTimerRef.current) {
               clearInterval(sleepTimerRef.current);
             }
             Taro.showToast({
-              title: '定时结束，已暂停',
+              title: '定时结束，已停止',
               icon: 'none'
             });
             console.log('[PlayPage] Sleep timer finished');
@@ -123,7 +106,7 @@ export default function PlayPage() {
         clearInterval(sleepTimerRef.current);
       }
     };
-  }, [sleepTimer, setPlaying]);
+  }, [sleepTimer, stopPlayback]);
 
   const handlePlayToggle = () => {
     if (!currentChapter) {
@@ -133,24 +116,15 @@ export default function PlayPage() {
       });
       return;
     }
-
-    setPlaying(!isPlaying);
-    console.log('[PlayPage] Play toggled:', !isPlaying);
+    togglePlay();
   };
 
   const handlePrevParagraph = () => {
     prevParagraph();
-    updateProgressByParagraph();
   };
 
   const handleNextParagraph = () => {
     nextParagraph();
-    updateProgressByParagraph();
-  };
-
-  const updateProgressByParagraph = () => {
-    const paraDuration = totalDuration / totalParagraphs;
-    setProgress(currentParagraphIndex * paraDuration);
   };
 
   const handleSleepSelect = (minutes: number) => {
@@ -178,8 +152,8 @@ export default function PlayPage() {
 
   const handleChapterSelect = (chapter: Chapter) => {
     setCurrentChapter(chapter.id);
-    setProgress(0);
     setShowChapterModal(false);
+    setElapsedSeconds(0);
     console.log('[PlayPage] Chapter selected:', chapter.title);
   };
 
@@ -187,7 +161,7 @@ export default function PlayPage() {
     setTextSize(size);
   };
 
-  const progressPercent = totalDuration > 0 ? (progress / totalDuration) * 100 : 0;
+  const progressPercent = totalDuration > 0 ? (elapsedSeconds / totalDuration) * 100 : 0;
 
   const formatSleepRemaining = () => {
     if (sleepRemaining === null) return '';
@@ -228,7 +202,7 @@ export default function PlayPage() {
                 />
               </View>
               <View className={styles.progressInfo}>
-                <Text>{formatTime(progress)}</Text>
+                <Text>{formatTime(elapsedSeconds)}</Text>
                 <Text>{formatTime(totalDuration)}</Text>
               </View>
             </View>
@@ -263,10 +237,10 @@ export default function PlayPage() {
               </Button>
 
               <Button
-                className={classnames(styles.playBtn, isPlaying && styles.playing)}
+                className={classnames(styles.playBtn, (isPlaying || isPaused) && styles.playing)}
                 onClick={handlePlayToggle}
               >
-                {isPlaying ? '⏸' : '▶'}
+                {isPlaying && !isPaused ? '⏸' : '▶'}
               </Button>
 
               <Button

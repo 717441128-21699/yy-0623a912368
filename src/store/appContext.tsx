@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import type { Chapter, VoiceSettings, VoiceType } from '@/types';
 import {
   getChapters,
@@ -12,6 +12,7 @@ import {
   generateId
 } from '@/utils/storage';
 import { parseParagraphs, generateChapterTitle } from '@/utils/textParser';
+import { speak, stopSpeak, pauseSpeak, resumeSpeak, isSpeaking } from '@/utils/tts';
 import { getMockChapters } from '@/data/mockChapters';
 
 interface AppContextType {
@@ -19,17 +20,21 @@ interface AppContextType {
   voiceSettings: VoiceSettings;
   currentChapter: Chapter | null;
   isPlaying: boolean;
+  isPaused: boolean;
   currentParagraphIndex: number;
 
   addChapter: (content: string, title?: string) => Chapter;
   removeChapter: (id: string) => void;
   setCurrentChapter: (id: string) => void;
   updateVoiceSettings: (settings: Partial<VoiceSettings>) => void;
-  setPlaying: (playing: boolean) => void;
+  togglePlay: () => void;
+  stopPlayback: () => void;
   setParagraphIndex: (index: number) => void;
   nextParagraph: () => void;
   prevParagraph: () => void;
   adjustSpeed: (delta: number) => void;
+  previewVoice: (text: string) => void;
+  stopPreview: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -45,7 +50,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
   const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [currentParagraphIndex, setCurrentParagraphIndex] = useState(0);
+
+  const isPreviewRef = useRef(false);
 
   useEffect(() => {
     const storedChapters = getChapters();
@@ -56,12 +64,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setCurrentChapterId(mockChapters[0].id);
       }
     } else {
-      setChapters(storedChapters);
+      const sortedChapters = [...storedChapters].sort((a, b) => a.createdAt - b.createdAt);
+      setChapters(sortedChapters);
       const savedId = getCurrentChapterId();
-      if (savedId && storedChapters.some(c => c.id === savedId)) {
+      if (savedId && sortedChapters.some(c => c.id === savedId)) {
         setCurrentChapterId(savedId);
-      } else if (storedChapters.length > 0) {
-        setCurrentChapterId(storedChapters[0].id);
+      } else if (sortedChapters.length > 0) {
+        setCurrentChapterId(sortedChapters[0].id);
       }
     }
 
@@ -69,9 +78,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setVoiceSettings(savedSettings);
 
     console.log('[AppContext] Initialized with', storedChapters.length, 'chapters');
+
+    return () => {
+      stopSpeak();
+    };
   }, []);
 
   const currentChapter = chapters.find(c => c.id === currentChapterId) || null;
+
+  const playCurrentParagraph = useCallback(() => {
+    if (!currentChapter) return;
+
+    const paragraph = currentChapter.paragraphs[currentParagraphIndex];
+    if (!paragraph) {
+      setIsPlaying(false);
+      return;
+    }
+
+    isPreviewRef.current = false;
+    setIsPlaying(true);
+    setIsPaused(false);
+
+    speak({
+      text: paragraph,
+      settings: voiceSettings,
+      highlightWords: voiceSettings.highlightWords,
+      onEnd: () => {
+        if (isPreviewRef.current) return;
+
+        if (currentParagraphIndex < (currentChapter?.paragraphs.length || 0) - 1) {
+          setCurrentParagraphIndex(prev => {
+            const next = prev + 1;
+            setTimeout(() => {
+              if (!isPreviewRef.current) {
+                playCurrentParagraph();
+              }
+            }, 300);
+            return next;
+          });
+        } else {
+          setIsPlaying(false);
+          setIsPaused(false);
+          console.log('[AppContext] Chapter finished');
+        }
+      }
+    });
+  }, [currentChapter, currentParagraphIndex, voiceSettings]);
 
   const addChapter = useCallback((content: string, title?: string): Chapter => {
     const now = Date.now();
@@ -87,20 +139,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 
     const updated = storageAddChapter(chapter);
-    setChapters(updated);
+    const sorted = [...updated].sort((a, b) => a.createdAt - b.createdAt);
+    setChapters(sorted);
     setCurrentChapterId(chapter.id);
     setCurrentParagraphIndex(0);
+    stopSpeak();
+    setIsPlaying(false);
+    setIsPaused(false);
     console.log('[AppContext] Chapter added:', chapter.title);
     return chapter;
   }, []);
 
   const removeChapter = useCallback((id: string) => {
     const updated = storageDeleteChapter(id);
-    setChapters(updated);
+    const sorted = [...updated].sort((a, b) => a.createdAt - b.createdAt);
+    setChapters(sorted);
 
     if (currentChapterId === id) {
-      if (updated.length > 0) {
-        setCurrentChapterId(updated[0].id);
+      stopSpeak();
+      setIsPlaying(false);
+      setIsPaused(false);
+      if (sorted.length > 0) {
+        setCurrentChapterId(sorted[0].id);
         setCurrentParagraphIndex(0);
       } else {
         setCurrentChapterId(null);
@@ -111,9 +171,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [currentChapterId]);
 
   const setCurrentChapter = useCallback((id: string) => {
+    stopSpeak();
     setCurrentChapterId(id);
     setCurrentParagraphIndex(0);
     setIsPlaying(false);
+    setIsPaused(false);
     saveCurrentChapterId(id);
     console.log('[AppContext] Current chapter changed:', id);
   }, []);
@@ -126,26 +188,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const setPlaying = useCallback((playing: boolean) => {
-    setIsPlaying(playing);
-    console.log('[AppContext] Playing:', playing);
+  const togglePlay = useCallback(() => {
+    if (!currentChapter) {
+      console.warn('[AppContext] No chapter selected');
+      return;
+    }
+
+    if (isPlaying && !isPaused) {
+      pauseSpeak();
+      setIsPaused(true);
+      console.log('[AppContext] Paused');
+    } else if (isPaused) {
+      resumeSpeak();
+      setIsPaused(false);
+      console.log('[AppContext] Resumed');
+    } else {
+      playCurrentParagraph();
+    }
+  }, [currentChapter, isPlaying, isPaused, playCurrentParagraph]);
+
+  const stopPlayback = useCallback(() => {
+    stopSpeak();
+    isPreviewRef.current = false;
+    setIsPlaying(false);
+    setIsPaused(false);
   }, []);
 
-  const setParagraphIndex = useCallback((index: number) => {
+  const setParagraphIndexAndPlay = useCallback((index: number) => {
+    stopSpeak();
+    isPreviewRef.current = false;
     setCurrentParagraphIndex(index);
-  }, []);
+    if (isPlaying) {
+      setTimeout(() => playCurrentParagraph(), 100);
+    }
+  }, [isPlaying, playCurrentParagraph]);
 
   const nextParagraph = useCallback(() => {
-    if (currentChapter) {
-      setCurrentParagraphIndex(prev =>
-        Math.min(prev + 1, currentChapter.paragraphs.length - 1)
-      );
-    }
-  }, [currentChapter]);
+    if (!currentChapter) return;
+    const nextIdx = Math.min(currentParagraphIndex + 1, currentChapter.paragraphs.length - 1);
+    setParagraphIndexAndPlay(nextIdx);
+  }, [currentChapter, currentParagraphIndex, setParagraphIndexAndPlay]);
 
   const prevParagraph = useCallback(() => {
-    setCurrentParagraphIndex(prev => Math.max(prev - 1, 0));
-  }, []);
+    const prevIdx = Math.max(currentParagraphIndex - 1, 0);
+    setParagraphIndexAndPlay(prevIdx);
+  }, [currentParagraphIndex, setParagraphIndexAndPlay]);
 
   const adjustSpeed = useCallback((delta: number) => {
     setVoiceSettings(prev => {
@@ -157,21 +244,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const previewVoice = useCallback((text: string) => {
+    stopSpeak();
+    isPreviewRef.current = true;
+    setIsPlaying(false);
+    setIsPaused(false);
+
+    speak({
+      text,
+      settings: voiceSettings,
+      highlightWords: voiceSettings.highlightWords,
+      onEnd: () => {
+        isPreviewRef.current = false;
+        console.log('[AppContext] Preview finished');
+      }
+    });
+  }, [voiceSettings]);
+
+  const stopPreview = useCallback(() => {
+    stopSpeak();
+    isPreviewRef.current = false;
+  }, []);
+
   const value: AppContextType = {
     chapters,
     voiceSettings,
     currentChapter,
     isPlaying,
+    isPaused,
     currentParagraphIndex,
     addChapter,
     removeChapter,
     setCurrentChapter,
     updateVoiceSettings,
-    setPlaying,
-    setParagraphIndex,
+    togglePlay,
+    stopPlayback,
+    setParagraphIndex: setParagraphIndexAndPlay,
     nextParagraph,
     prevParagraph,
-    adjustSpeed
+    adjustSpeed,
+    previewVoice,
+    stopPreview
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

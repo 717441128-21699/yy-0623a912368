@@ -1,17 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Input, Button, Slider, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useApp } from '@/store/appContext';
 import VoiceOption from '@/components/VoiceOption';
 import BigButton from '@/components/BigButton';
 import { voiceOptions } from '@/data/mockChapters';
+import { stopSpeak } from '@/utils/tts';
 import type { VoiceType } from '@/types';
 import styles from './index.module.scss';
 
+const PREVIEW_TEXT: Record<VoiceType, string> = {
+  slow: '各位听众朋友，大家好。今天我来给大家读一段小说，请慢慢听，不要着急。',
+  female: '春风十里不如你，亲爱的，今天天气真好，我们一起去郊外走走吧。',
+  male: '话说那天下第一剑客，行走江湖数十年，从未遇到过真正的对手。',
+  dialect: '嗨呀，这日子过得可真舒坦，俺们那旮沓的人呐，都是实在人。'
+};
+
 export default function AdjustPage() {
-  const { voiceSettings, updateVoiceSettings, currentChapter, setPlaying, isPlaying } = useApp();
+  const {
+    voiceSettings,
+    updateVoiceSettings,
+    currentChapter,
+    previewVoice,
+    stopPreview
+  } = useApp();
+
   const [highlightInput, setHighlightInput] = useState('');
   const [isPreviewing, setIsPreviewing] = useState(false);
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      stopSpeak();
+      if (previewTimerRef.current) {
+        clearTimeout(previewTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleVoiceSelect = (voiceId: VoiceType) => {
     const option = voiceOptions.find(v => v.id === voiceId);
@@ -22,23 +47,33 @@ export default function AdjustPage() {
         pitch: option.pitch
       });
       console.log('[AdjustPage] Voice selected:', voiceId);
+
+      if (isPreviewing) {
+        setIsPreviewing(false);
+        stopPreview();
+      }
     }
   };
 
   const handleSpeedChange = (e: any) => {
-    const value = e.detail.value;
-    updateVoiceSettings({ speed: Number(value.toFixed(1)) });
+    const value = Number(e.detail.value.toFixed(1));
+    updateVoiceSettings({ speed: value });
   };
 
   const handleSpeedAdjust = (delta: number) => {
     const newSpeed = Math.max(0.5, Math.min(1.5, voiceSettings.speed + delta));
     updateVoiceSettings({ speed: Number(newSpeed.toFixed(1)) });
     console.log('[AdjustPage] Speed adjusted to:', newSpeed.toFixed(1));
+
+    if (isPreviewing) {
+      handleStopPreview();
+      setTimeout(() => handlePreview(), 200);
+    }
   };
 
   const handlePitchChange = (e: any) => {
-    const value = e.detail.value;
-    updateVoiceSettings({ pitch: Number(value.toFixed(1)) });
+    const value = Number(e.detail.value.toFixed(1));
+    updateVoiceSettings({ pitch: value });
   };
 
   const handleAddHighlight = () => {
@@ -73,24 +108,36 @@ export default function AdjustPage() {
   };
 
   const handlePreview = () => {
-    if (!currentChapter) {
-      Taro.showToast({
-        title: '请先选择章节',
-        icon: 'none'
-      });
+    if (isPreviewing) {
+      handleStopPreview();
       return;
     }
 
-    setIsPreviewing(!isPreviewing);
-    setPlaying(!isPreviewing);
+    const previewText = PREVIEW_TEXT[voiceSettings.voiceType] || PREVIEW_TEXT.slow;
+    let textToSpeak = previewText;
 
-    Taro.showToast({
-      title: isPreviewing ? '暂停试听' : '开始试听',
-      icon: 'none',
-      duration: 1000
-    });
+    if (currentChapter && currentChapter.paragraphs.length > 0) {
+      textToSpeak = currentChapter.paragraphs[0].substring(0, 80) + '...';
+    }
 
-    console.log('[AdjustPage] Preview:', !isPreviewing);
+    setIsPreviewing(true);
+    previewVoice(textToSpeak);
+
+    const estimatedMs = Math.min(8000, textToSpeak.length * 250 / voiceSettings.speed);
+    previewTimerRef.current = setTimeout(() => {
+      setIsPreviewing(false);
+    }, estimatedMs);
+
+    console.log('[AdjustPage] Preview started with voice:', voiceSettings.voiceType);
+  };
+
+  const handleStopPreview = () => {
+    stopPreview();
+    setIsPreviewing(false);
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current);
+    }
+    console.log('[AdjustPage] Preview stopped');
   };
 
   return (
@@ -218,10 +265,12 @@ export default function AdjustPage() {
 
       <View className={styles.bottomBar}>
         <BigButton type="primary" size="large" block onClick={handlePreview}>
-          {isPreviewing ? '⏸️ 暂停试听' : '🔊 试听效果'}
+          {isPreviewing ? '⏹️ 停止试听' : '🔊 试听效果'}
         </BigButton>
         <Text className={styles.previewTip}>
-          {currentChapter ? `试听：${currentChapter.title}` : '请到"选文"页选择或添加章节'}
+          {currentChapter
+            ? `试听：${voiceSettings.voiceType === 'slow' ? '慢速旁白' : voiceSettings.voiceType === 'female' ? '清亮女声' : voiceSettings.voiceType === 'male' ? '沉稳男声' : '方言韵味'} · ${voiceSettings.speed.toFixed(1)}x`
+            : '请到"选文"页选择或添加章节'}
         </Text>
       </View>
     </View>

@@ -27,7 +27,7 @@ export function saveChapters(chapters: Chapter[]): void {
 
 export function addChapter(chapter: Chapter): Chapter[] {
   const chapters = getChapters();
-  chapters.unshift(chapter);
+  chapters.push(chapter);
   saveChapters(chapters);
   return chapters;
 }
